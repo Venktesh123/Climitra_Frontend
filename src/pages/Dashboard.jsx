@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCapturesApi } from '../api/captureApi'
+import useAuth from '../hooks/useAuth'
 
 const statusStyle = {
   APPROVED:       { background: '#d1fae5', color: '#065f46', label: 'APPROVED' },
@@ -15,6 +16,7 @@ const statusStyle = {
 
 function Dashboard() {
   const navigate = useNavigate()
+  const { logout, user } = useAuth()
   const [captures, setCaptures] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -31,7 +33,6 @@ function Dashboard() {
 
   useEffect(() => {
     getCaptures()
-    // Poll every 5s so QUEUED → PROCESSING → PENDING_REVIEW updates automatically
     const interval = setInterval(getCaptures, 5000)
     return () => clearInterval(interval)
   }, [])
@@ -66,12 +67,12 @@ function Dashboard() {
         .db-card {
           background: #fff; border-radius: 16px; overflow: hidden;
           margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-          cursor: pointer;
         }
         .db-nav-item {
           display: flex; flex-direction: column; align-items: center; gap: 3px;
           background: none; border: none; cursor: pointer; padding: 0 8px;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
 
@@ -93,19 +94,32 @@ function Dashboard() {
             </svg>
             <span style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: '0.06em', color: '#fff' }}>CLIMITRA</span>
           </div>
-          <div style={{
-            width: '36px', height: '36px', borderRadius: '50%',
-            background: 'rgba(255,255,255,0.25)', border: '1.5px solid rgba(255,255,255,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.72rem', fontWeight: 700, color: '#fff',
-          }}>
-            {JSON.parse(localStorage.getItem('user') || '{}')?.name?.slice(0,2)?.toUpperCase() || 'ME'}
-          </div>
+
+          {/* AVATAR — tap to logout */}
+          <button
+            onClick={logout}
+            title="Tap to logout"
+            style={{
+              width: '36px', height: '36px', borderRadius: '50%',
+              background: 'rgba(255,255,255,0.25)', border: '1.5px solid rgba(255,255,255,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '0.72rem', fontWeight: 700, color: '#fff', cursor: 'pointer',
+            }}
+          >
+            {user?.name?.slice(0, 2)?.toUpperCase() || 'ME'}
+          </button>
         </div>
+
         <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.72rem', fontWeight: 500, marginBottom: '3px' }}>
           Good morning 👋
         </div>
-        <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>Dashboard</div>
+        <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>
+          {user?.name || 'Dashboard'}
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.65rem', fontWeight: 500, marginTop: '2px' }}>
+          {user?.role?.replace('_', ' ')}
+        </div>
+
         <svg style={{ position: 'absolute', bottom: 0, left: 0, right: 0, display: 'block' }}
           viewBox="0 0 375 40" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M0 20 Q90 0 187 20 Q280 40 375 15 L375 40 L0 40 Z" fill="#f1f5f4"/>
@@ -145,15 +159,11 @@ function Dashboard() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#111827' }}>Recent Captures</span>
-          <span style={{ fontSize: '0.62rem', color: '#9ca3af', fontWeight: 500 }}>
-            Auto-refreshes every 5s
-          </span>
+          <span style={{ fontSize: '0.62rem', color: '#9ca3af', fontWeight: 500 }}>Auto-refreshes every 5s</span>
         </div>
 
         {loading && captures.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.8rem', padding: '2rem 0' }}>
-            Loading...
-          </div>
+          <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.8rem', padding: '2rem 0' }}>Loading...</div>
         )}
 
         {!loading && captures.length === 0 && (
@@ -181,7 +191,6 @@ function Dashboard() {
                   style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }}
                   onError={(e) => { e.target.style.display = 'none' }}
                 />
-                {/* Processing overlay */}
                 {isProcessing && (
                   <div style={{
                     position: 'absolute', inset: 0,
@@ -198,10 +207,8 @@ function Dashboard() {
                     <span style={{ color: '#fff', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.06em' }}>
                       OCR PROCESSING
                     </span>
-                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                   </div>
                 )}
-                {/* Failed overlay */}
                 {isFailed && (
                   <div style={{
                     position: 'absolute', inset: 0,
@@ -245,15 +252,20 @@ function Dashboard() {
         display: 'flex', justifyContent: 'space-around', alignItems: 'center',
         padding: '10px 0 14px',
       }}>
-        {[
-          { icon: '⌂', label: 'Home',   path: '/dashboard' },
-          { icon: '↑', label: 'Upload', path: '/upload' },
-        ].map(({ icon, label, path }) => (
-          <button key={label} className="db-nav-item" onClick={() => navigate(path)}>
-            <span style={{ fontSize: '18px', color: label === 'Home' ? '#16a34a' : '#9ca3af' }}>{icon}</span>
-            <span style={{ fontSize: '0.55rem', fontWeight: 600, color: label === 'Home' ? '#16a34a' : '#9ca3af', fontFamily: "'Montserrat', sans-serif" }}>{label}</span>
-          </button>
-        ))}
+        <button className="db-nav-item" onClick={() => navigate('/dashboard')}>
+          <span style={{ fontSize: '18px', color: '#16a34a' }}>⌂</span>
+          <span style={{ fontSize: '0.55rem', fontWeight: 600, color: '#16a34a', fontFamily: "'Montserrat', sans-serif" }}>Home</span>
+        </button>
+
+        <button className="db-nav-item" onClick={() => navigate('/upload')}>
+          <span style={{ fontSize: '18px', color: '#9ca3af' }}>↑</span>
+          <span style={{ fontSize: '0.55rem', fontWeight: 600, color: '#9ca3af', fontFamily: "'Montserrat', sans-serif" }}>Upload</span>
+        </button>
+
+        <button className="db-nav-item" onClick={logout}>
+          <span style={{ fontSize: '18px', color: '#ef4444' }}>⏻</span>
+          <span style={{ fontSize: '0.55rem', fontWeight: 600, color: '#ef4444', fontFamily: "'Montserrat', sans-serif" }}>Logout</span>
+        </button>
       </div>
     </div>
   )
