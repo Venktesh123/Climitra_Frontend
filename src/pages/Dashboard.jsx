@@ -3,17 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { getCapturesApi } from '../api/captureApi'
 
 const statusStyle = {
-  APPROVED:  { background: '#d1fae5', color: '#065f46', label: 'APPROVED' },
-  PENDING:   { background: '#fef3c7', color: '#92400e', label: 'PENDING' },
-  QUEUED:    { background: '#fef3c7', color: '#92400e', label: 'QUEUED' },
-  REJECTED:  { background: '#fee2e2', color: '#991b1b', label: 'REJECTED' },
-  IN_REVIEW: { background: '#dbeafe', color: '#1e40af', label: 'IN REVIEW' },
+  APPROVED:       { background: '#d1fae5', color: '#065f46', label: 'APPROVED' },
+  PENDING:        { background: '#fef3c7', color: '#92400e', label: 'PENDING' },
+  QUEUED:         { background: '#fef3c7', color: '#92400e', label: 'QUEUED' },
+  PROCESSING:     { background: '#e0f2fe', color: '#0369a1', label: 'PROCESSING' },
+  REJECTED:       { background: '#fee2e2', color: '#991b1b', label: 'REJECTED' },
+  IN_REVIEW:      { background: '#dbeafe', color: '#1e40af', label: 'IN REVIEW' },
   PENDING_REVIEW: { background: '#dbeafe', color: '#1e40af', label: 'IN REVIEW' },
+  OCR_FAILED:     { background: '#fce7f3', color: '#9d174d', label: 'OCR FAILED' },
 }
 
 function Dashboard() {
   const navigate = useNavigate()
   const [captures, setCaptures] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const getCaptures = async () => {
     try {
@@ -21,16 +24,23 @@ function Dashboard() {
       setCaptures(response.data.data)
     } catch (error) {
       console.log(error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  useEffect(() => { getCaptures() }, [])
+  useEffect(() => {
+    getCaptures()
+    // Poll every 5s so QUEUED → PROCESSING → PENDING_REVIEW updates automatically
+    const interval = setInterval(getCaptures, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const counts = {
     total:    captures.length,
-    pending:  captures.filter(c => c.status === 'PENDING' || c.status === 'QUEUED' || c.status === 'PENDING_REVIEW').length,
+    pending:  captures.filter(c => ['PENDING', 'QUEUED', 'PROCESSING', 'PENDING_REVIEW'].includes(c.status)).length,
     approved: captures.filter(c => c.status === 'APPROVED').length,
-    rejected: captures.filter(c => c.status === 'REJECTED').length,
+    rejected: captures.filter(c => ['REJECTED', 'OCR_FAILED'].includes(c.status)).length,
   }
 
   return (
@@ -50,14 +60,19 @@ function Dashboard() {
           background: linear-gradient(135deg, #166534 0%, #16a34a 55%, #22c55e 100%);
           color: #fff; font-family: 'Montserrat', sans-serif; font-weight: 700;
           font-size: 0.82rem; letter-spacing: 0.08em; margin-bottom: 1rem;
-          box-shadow: 0 4px 14px rgba(22,163,74,0.32);
-          transition: transform 0.18s;
+          box-shadow: 0 4px 14px rgba(22,163,74,0.32); transition: transform 0.18s;
         }
         .db-upload-btn:hover { transform: translateY(-1px); }
-        .db-card { background: #fff; border-radius: 16px; overflow: hidden;
-          margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
-        .db-nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px;
-          background: none; border: none; cursor: pointer; padding: 0 8px; }
+        .db-card {
+          background: #fff; border-radius: 16px; overflow: hidden;
+          margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+          cursor: pointer;
+        }
+        .db-nav-item {
+          display: flex; flex-direction: column; align-items: center; gap: 3px;
+          background: none; border: none; cursor: pointer; padding: 0 8px;
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
 
       {/* HEADER */}
@@ -83,7 +98,9 @@ function Dashboard() {
             background: 'rgba(255,255,255,0.25)', border: '1.5px solid rgba(255,255,255,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '0.72rem', fontWeight: 700, color: '#fff',
-          }}>JD</div>
+          }}>
+            {JSON.parse(localStorage.getItem('user') || '{}')?.name?.slice(0,2)?.toUpperCase() || 'ME'}
+          </div>
         </div>
         <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.72rem', fontWeight: 500, marginBottom: '3px' }}>
           Good morning 👋
@@ -120,7 +137,7 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* CAPTURES */}
+      {/* CAPTURES LIST */}
       <div style={{ padding: '0 1.25rem', paddingBottom: '80px' }}>
         <button className="db-upload-btn" onClick={() => navigate('/upload')}>
           ↑ NEW CAPTURE
@@ -128,34 +145,86 @@ function Dashboard() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#111827' }}>Recent Captures</span>
-          <button style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            See all →
-          </button>
+          <span style={{ fontSize: '0.62rem', color: '#9ca3af', fontWeight: 500 }}>
+            Auto-refreshes every 5s
+          </span>
         </div>
 
-        {captures.length === 0 && (
+        {loading && captures.length === 0 && (
+          <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.8rem', padding: '2rem 0' }}>
+            Loading...
+          </div>
+        )}
+
+        {!loading && captures.length === 0 && (
           <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.8rem', padding: '2rem 0' }}>
             No captures yet. Upload your first one!
           </div>
         )}
 
         {captures.map((capture) => {
-          const badge = statusStyle[capture.status] || statusStyle.PENDING
+          const badge = statusStyle[capture.status] || statusStyle.QUEUED
+          const isProcessing = capture.status === 'QUEUED' || capture.status === 'PROCESSING'
+          const isFailed = capture.status === 'OCR_FAILED'
+
           return (
-            <div key={capture.id} className="db-card" onClick={() => navigate(`/review/${capture.id}`)} style={{ cursor: 'pointer' }}>
-              <img
-                src={capture.blobUrl}
-                alt={capture.documentType}
-                style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }}
-                onError={(e) => { e.target.style.display = 'none' }}
-              />
+            <div
+              key={capture.id}
+              className="db-card"
+              onClick={() => !isProcessing && navigate(`/review/${capture.id}`)}
+              style={{ cursor: isProcessing ? 'default' : 'pointer', opacity: isFailed ? 0.85 : 1 }}
+            >
+              <div style={{ position: 'relative' }}>
+                <img
+                  src={capture.blobUrl}
+                  alt={capture.documentType}
+                  style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }}
+                  onError={(e) => { e.target.style.display = 'none' }}
+                />
+                {/* Processing overlay */}
+                {isProcessing && (
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'rgba(0,0,0,0.45)',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  }}>
+                    <div style={{
+                      width: '28px', height: '28px', borderRadius: '50%',
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      borderTop: '3px solid #fff',
+                      animation: 'spin 0.8s linear infinite',
+                    }} />
+                    <span style={{ color: '#fff', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.06em' }}>
+                      OCR PROCESSING
+                    </span>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                  </div>
+                )}
+                {/* Failed overlay */}
+                {isFailed && (
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'rgba(153,27,27,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ color: '#fff', fontSize: '0.72rem', fontWeight: 700 }}>⚠ OCR FAILED</span>
+                  </div>
+                )}
+              </div>
+
               <div style={{ padding: '10px 14px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827' }}>{capture.documentType}</span>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827' }}>
+                    {capture.documentType}
+                  </span>
                   <span style={{
                     fontSize: '0.6rem', fontWeight: 700, padding: '3px 9px', borderRadius: '50px',
                     letterSpacing: '0.04em', background: badge.background, color: badge.color,
-                  }}>{badge.label}</span>
+                    animation: isProcessing ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                  }}>
+                    {badge.label}
+                  </span>
                 </div>
                 {capture.uploadedAt && (
                   <div style={{ fontSize: '0.62rem', color: '#9ca3af', marginTop: '3px' }}>
@@ -177,10 +246,8 @@ function Dashboard() {
         padding: '10px 0 14px',
       }}>
         {[
-          { icon: '⌂', label: 'Home',     path: '/dashboard' },
-          { icon: '↑', label: 'Upload',   path: '/upload' },
-          { icon: '☰', label: 'Captures', path: '/dashboard' },
-          { icon: '👤', label: 'Profile', path: '/dashboard' },
+          { icon: '⌂', label: 'Home',   path: '/dashboard' },
+          { icon: '↑', label: 'Upload', path: '/upload' },
         ].map(({ icon, label, path }) => (
           <button key={label} className="db-nav-item" onClick={() => navigate(path)}>
             <span style={{ fontSize: '18px', color: label === 'Home' ? '#16a34a' : '#9ca3af' }}>{icon}</span>
